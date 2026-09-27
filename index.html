@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>电阻组合计算</title><style>
+:root{--ink:#172033;--muted:#667085;--line:#e5eaf1;--accent:#2457d6}*{box-sizing:border-box}body{margin:0;background:#f3f5f8;color:var(--ink);font:14px/1.5 "Microsoft YaHei",sans-serif}main{width:min(1080px,calc(100% - 32px));margin:22px auto}.panel{display:grid;grid-template-columns:280px minmax(420px,1fr) 220px;grid-template-rows:auto auto;gap:16px 18px;align-items:start;padding:18px;background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:0 8px 28px rgba(23,32,51,.05)}.figure{display:grid;justify-items:center;padding:8px;border-radius:14px;background:#f8fafc}.schematic{width:210px;height:auto;background:#fff}.card{padding:16px 18px 18px;border:1px solid var(--line);border-radius:16px}.equation{display:flex;justify-content:center;align-items:center;gap:7px;font-size:22px;font-weight:760}.labels,.field{display:flex;justify-content:center;align-items:center;gap:48px;margin-top:5px;color:var(--muted);font-weight:700}.field{gap:8px;margin:13px 0}.actions{display:grid;gap:9px}input{width:72px;height:34px;border:1px solid #d6dbe3;border-radius:8px;background:#fff;text-align:center;font:inherit}button{height:36px;border:1px solid #d6dbe3;border-radius:9px;background:#fff;font:inherit;font-weight:700;cursor:pointer}.primary{border:0;background:var(--accent);color:#fff}.left,.tools{display:grid;align-content:start;gap:10px}.group{display:grid;grid-template-columns:46px 1fr 28px;gap:7px;align-items:center;font-weight:700}.results{grid-column:1/-1;height:250px;overflow:auto;margin-top:2px;padding:13px 15px;border-radius:15px;background:#101828;color:#e5e7eb;font:13px/1.5 Consolas,monospace;white-space:pre}@media(max-width:900px){.panel{grid-template-columns:1fr}.results{grid-column:auto}}
+</style></head><body><main><section class="panel"><div class="figure"><img class="schematic" src="assets/circuit.png" alt="分压电阻电路图"></div><div class="card"><div class="equation"><input id="vcc" value="3.3"> V = <input id="vfb" value="0.6"> ×（1 + R1 / R2）</div><div class="labels"><span>Vout</span><span>VFB</span></div><div class="field">精度 <input id="mv" value="20"> mV</div><div class="actions"><button id="series" class="primary">无电阻并联组合</button><button id="parallel" class="primary">有电阻并联组合</button></div></div><div class="tools"><label class="group">阻值 <input id="target"> Ω</label><label class="group">精度 <input id="ohm" value="10"> Ω</label><button id="search">搜索阻值</button><button id="clear">清空</button><button id="close">关闭</button></div><div class="left"><button id="lowerSeries">无电阻并联组合</button><button id="lowerParallel">有电阻并联组合</button><label class="group">VCC <input id="leftVcc" value="5"> V</label><label class="group">Vout <input id="leftVout" value="1"> V</label><label class="group">精度 <input id="lowerMv" value="10"> mV</label></div><div id="results" class="results">点击按钮后显示组合。</div></section></main>
+<script>
+const R = [
+100, 150, 180, 200, 220, 300, 330, 360, 430, 510, 560, 620, 680, 750, 820, 910,
+1000, 1200, 1500, 1600, 1800, 2000, 2200, 2400, 2700, 3000, 3300, 3600, 3900, 4300, 4700, 5100,
+5600, 6200, 6800, 7500, 8200, 9100, 12000, 18000, 10000, 20000, 22000, 27000, 30000, 33000, 36000, 39000,
+43000, 47000, 51000, 56000, 62000, 68000, 75000, 82000, 100000, 110000, 120000, 150000, 160000, 180000, 200000, 220000,
+270000, 300000, 330000, 360000, 90000, 430000, 470000, 510000, 560000, 620000, 680000, 820000, 910000
+];
+const $ = id => document.getElementById(id);
+const read = id => { const raw = $(id).value.trim(); const value = Number(raw); if (raw === "" || !Number.isFinite(value)) throw new Error("请输入有效数字"); return value; };
+const text = value => Number(value.toPrecision(15)).toString();
+const show = lines => { $("results").textContent = lines.length ? lines.join("\n") : "没有结果。"; };
+const catalog = () => {
+  const items = R.map(value => ({value, a:value, b:0}));
+  for (let j = 0; j < R.length; j++) for (let i = j; i < R.length; i++) items.push({value:R[j] * R[i] / (R[j] + R[i]), a:R[j], b:R[i]});
+  return items;
+};
+const above = (value, target, tolerance) => value > target && value - target < tolerance;
+const row = (r1, r2, value) => `R1_0：${text(r1)}       R1_1：0000       R2_0：${text(r2)}       R2_1：0000       ${text(value)}`;
+const pairRow = (r1, r2, value) => `R1_0：${text(r1.a)}    R1_1：${text(r1.b)}    R2_0：${text(r2.a)}    R2_1：${text(r2.b)}    ${text(value)}`;
+
+function topSeries() {
+  const vout = read("vcc"), vfb = read("vfb"), tolerance = read("mv") / 1000, lines = [];
+  for (let i = 0; i < R.length; i++) for (let j = i; j < R.length; j++) {
+    const first = vfb * (1 + R[i] / R[j]);
+    if (above(first, vout, tolerance) || first === vout) lines.push(row(R[i], R[j], first));
+    const second = vfb * (1 + R[j] / R[i]);
+    if (above(second, vout, tolerance) || second === vout) lines.push(row(R[j], R[i], second));
+  }
+  return lines;
+}
+function topParallel() {
+  const vout = read("vcc"), vfb = read("vfb"), tolerance = read("mv") / 1000;
+  const items = catalog(), lines = [];
+  let count = 0;
+  for (let i = 0; i < items.length; i++) for (let j = i; j < items.length; j++) {
+    const first = vfb * (1 + items[i].value / items[j].value);
+    if (above(first, vout, tolerance) || first === vout) { count++; lines.push(pairRow(items[i], items[j], first)); }
+    const second = vfb * (1 + items[j].value / items[i].value);
+    if (above(second, vout, tolerance) || second === vout) { count++; lines.push(pairRow(items[j], items[i], second)); }
+    if (count > 100) return lines;
+  }
+  return lines;
+}
+function leftSeries() {
+  const vcc = read("leftVcc"), vout = read("leftVout"), tolerance = read("lowerMv") / 1000, lines = [];
+  for (let i = 0; i < R.length; i++) for (let j = i; j < R.length; j++) {
+    const first = vcc * R[i] / (R[i] + R[j]);
+    if (Math.abs(first - vout) < tolerance) lines.push(row(R[j], R[i], first));
+    const second = vcc * R[j] / (R[i] + R[j]);
+    if (Math.abs(second - vout) < tolerance) { const matched = row(R[i], R[j], second); lines.push(matched, matched); }
+  }
+  return lines;
+}
+function leftParallel() {
+  const vcc = read("leftVcc"), vout = read("leftVout"), tolerance = read("lowerMv") / 1000;
+  const items = catalog(), lines = [];
+  let count = 0;
+  for (let i = 0; i < items.length; i++) for (let j = i; j < items.length; j++) {
+    const first = vcc * items[i].value / (items[i].value + items[j].value);
+    if (above(first, vout, tolerance) || first === vout) { count++; lines.push(pairRow(items[j], items[i], first)); }
+    const second = vcc * items[j].value / (items[i].value + items[j].value);
+    if (above(second, vout, tolerance) || second === vout) { count++; lines.push(pairRow(items[i], items[j], second)); }
+    if (count > 100) return lines;
+  }
+  return lines;
+}
+function search() {
+  const target = read("target"), tolerance = read("ohm"), lines = [];
+  for (const item of catalog().slice(R.length)) {
+    if (target - item.value < tolerance && target > item.value) lines.push(`R1_0：${text(item.a)}    R1_1：${text(item.b)}    ${text(item.value)}`);
+    if (item.value === target) lines.push(`R1_0：${text(item.a)}    R1_1：${text(item.b)}    ${text(item.value)}`);
+  }
+  return lines.length ? lines : ["srooy!"];
+}
+function run(fn) { try { show(fn()); } catch (error) { show([error.message]); } }
+$("series").onclick = () => run(topSeries);
+$("parallel").onclick = () => run(topParallel);
+$("lowerSeries").onclick = () => run(leftSeries);
+$("lowerParallel").onclick = () => run(leftParallel);
+$("search").onclick = () => run(search);
+$("clear").onclick = () => show(["结果已清空。"]);
+$("close").onclick = () => window.close();
+</script>
+</body>
+</html>
